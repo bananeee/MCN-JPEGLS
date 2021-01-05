@@ -1,9 +1,13 @@
+import matplotlib.pyplot as plt
 import sys
 import getopt
 import random
 import cv2
+import numpy as np
 from bitstring import BitArray, BitStream
-import matplotlib.pyplot as plt 
+import matplotlib
+matplotlib.use('TkAgg')
+
 
 class Encoder:
     MAXVAL = 255
@@ -15,7 +19,7 @@ class Encoder:
     T1 = 3
     T2 = 7
     T3 = 21
-    Ra = Rb = Rc = Rd = 0, 0, 0, 0, 0
+    Ra = Rb = Rc = Rd = 0
     EOLine = 0
     A, N, Nn = [0] * 367, [0] * 367, [0] * 367
     B, C = [0] * 365, [0] * 365
@@ -24,12 +28,15 @@ class Encoder:
     q = 0
     Px = Rx = 0
     Errval = MErrval = EMErrval = 0
-    ErrvalArr = MErrvalArr = EMErrvalArr = []
+    ImgArr, ErrvalArr, MErrvalArr, EMErrvalArr, kArr = [], [], [], [], []
     k = TEMP = 0
+    Buffer = BitArray()
     
+    f = open('test2', 'ab')
+
     ImgWidth = 0
     ImgHeight = 0
-    
+
     originalImage = []
 
     haveCorrectPrediction = True
@@ -58,7 +65,7 @@ class Encoder:
         #         self.haveGraph = False
         #     elif opt in ("-m"):
         #         self.haveErrorMaping = False
-                
+
         # Initiate
         for i in range(0, 365):
             self.A[i] = 4
@@ -66,22 +73,39 @@ class Encoder:
             self.B[i] = self.Nn[i] = self.C[i] = 0
         self.A[365] = self.A[366] = 4
         self.N[365] = self.N[366] = 1
-        
+
     def convertImageToArr(self):
         """
         docstring
         """
-        img = cv2.imread("anh.jpg", 0)
-        
+        img = cv2.imread("food.jpg", 0)
+
         self.ImgHeight = img.shape[0]
         self.ImgWidth = img.shape[1]
-        
+
         for i in range(0, self.ImgHeight):
             tempCol = []
             for j in range(0, self.ImgWidth):
                 # tempCol.append(random.randint(0, 100))
                 tempCol.append(int(img[i][j]))
             self.originalImage.append(tempCol)
+        
+        # self.originalImage = [[1, 0, 0, 0, 2],
+        #                       [5, 2, 0, 6, 1],
+        #                       [4, 5, 3, 7, 6]]
+        # self.ImgHeight = 3
+        # self.ImgWidth = 5
+        
+        # self.ImgHeight = 1000
+        # self.ImgWidth = 1000
+        
+        # for i in range(0, self.ImgHeight):
+        #     tempCol = []
+        #     for j in range(0, self.ImgWidth):
+        #         tempCol.append(random.randint(0, 100))
+        #         # tempCol.append(int(img[i][j]))
+        #     self.originalImage.append(tempCol)
+            
         # print(self.originalImage)
 
     def quantizeGradient(self):
@@ -162,7 +186,7 @@ class Encoder:
         docstring
         """
         self.Errval = self.Rx - self.Px
-        # print(self.Errval, end=' ')
+        # print(self.Errval, end0, 0, 0, 0, 0=' ')
         if self.SIGN == -1:
             self.Errval = -self.Errval
 
@@ -197,8 +221,8 @@ class Encoder:
         """
         docstring
         """
-        self.B[self.q] = self.B[self.q] + self.Errval
-        self.A[self.q] = self.A[self.q] + abs(self.Errval)
+        self.B[self.q] += self.Errval
+        self.A[self.q] += abs(self.Errval)
         if self.N[self.q] == self.RESET:
             self.A[self.q] = self.A[self.q] >> 1
             self.B[self.q] = self.B[self.q] >> 1
@@ -211,10 +235,10 @@ class Encoder:
         """
         if self.B[self.q] <= -self.N[self.q]:
             self.B[self.q] += self.N[self.q]
-        if self.C[self.q] > self.MIN_C:
-            self.C[self.q] = self.C[self.q] - 1
-        if self.B[self.q] <= -self.N[self.q]:
-            self.B[self.q] = -self.N[self.q] + 1
+            if self.C[self.q] > self.MIN_C:
+                self.C[self.q] = self.C[self.q] - 1
+            if self.B[self.q] <= -self.N[self.q]:
+                self.B[self.q] = -self.N[self.q] + 1
         elif self.B[self.q] > 0:
             self.B[self.q] = self.B[self.q] - self.N[self.q]
             if self.C[self.q] < self.MAX_C:
@@ -226,23 +250,56 @@ class Encoder:
         """
         docstring
         """
-        pass
+        m = 1 << self.k
+        q = self.MErrval >> self.k
+        r = self.MErrval - m * q
+        ErrBitArr = BitArray()
+        for i in range(0, q):
+            ErrBitArr += [1]
+        ErrBitArr += [0]
+        rbin = "{0:b}".format(r)
+        for i in range(0, self.k-len(rbin)):
+            ErrBitArr += [0]
+        for i in rbin:
+            if i == '1':
+                ErrBitArr += [1]
+            else:
+                ErrBitArr += [0]
+        self.Buffer += ErrBitArr
 
     def writeToFile(self):
         """
         docstring
         """
-        pass
+        x = 0
+        while (self.Buffer.length // 8) > 0:
+            x += 1
+            self.f.write(self.Buffer[0:8].tobytes())
+            del self.Buffer[0:8]
+        return x
     
-    def showGraph(self):
-        range = (0, 255)
-        bins = 100
-        plt.hist(self.MErrvalArr, bins, range, color='green', histtype='bar', rwidth=0.2)
-        plt.xlabel('MErrVal')
-        plt.ylabel('Frequency')
-        plt.title('MErrVal')
-        plt.savefig("mygraph.png")
-        
+    def writeLastByte(self):
+        self.f.write(self.Buffer.tobytes())
+        self.f.close()
+
+    def showGraph(self, arr):
+        if arr == "MErrVal":   
+            range = (-255, 255)
+            bins = 100
+            # plt.hist(np.ravel(np.array(self.originalImage)), bins, color='blue', alpha=0.5)
+            plt.hist(self.MErrvalArr, bins, color='blue', alpha=0.5)
+            plt.xlabel('ErrVal')
+            plt.ylabel('Frequency')
+            plt.title('ErrVal')
+            plt.show()
+        elif arr == "Img":  
+            range = (-255, 255)
+            bins = 100
+            plt.hist(np.ravel(np.array(self.originalImage)), bins, color='blue', alpha=0.5)
+            plt.xlabel('ErrVal')
+            plt.ylabel('Frequency')
+            plt.title('ErrVal')
+            plt.show() 
 
     def regularMode(self):
         """
@@ -253,13 +310,15 @@ class Encoder:
         self.predictMED()
         self.correctPrediction()
         self.computeError()
-        self.moduloReductionError()
-        # self.computeGolombParameter()
+        # self.moduloReductionError()
+        self.computeGolombParameter()
         self.errorMapping()
         self.updateVariable()
         self.computeContextBias()
         
-        
+        self.golombCode()
+        self.writeToFile()
+
     def process(self):
         """
         docstring
@@ -291,19 +350,20 @@ class Encoder:
                     self.Rd = self.Rb
                 else:
                     self.Rd = self.originalImage[i - 1][j + 1]
-                    
+
                 self.D[0] = self.Rd - self.Rb
                 self.D[1] = self.Rb - self.Rc
                 self.D[2] = self.Rc - self.Ra
-                
+
                 self.regularMode()
                 # print(self.MErrval, end=' ')
+                self.ErrvalArr.append(self.Errval)
                 self.MErrvalArr.append(self.MErrval)
-        
-        self.showGraph()
-        
-        
-
+                self.kArr.append(self.k)
+                self.ImgArr.append(self.Rx)
+        self.writeLastByte()
+        self.showGraph("Img")
+        self.showGraph("MErrVal")
 
 if __name__ == "__main__":
     # x = Encoder(sys.argv[1:])
